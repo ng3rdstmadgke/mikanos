@@ -6,6 +6,8 @@ sudo apt install -y make clang lld qemu-system-x86
 qemuでOSを実行
 
 ```bash
+cd os
+
 # ビルド
 make build
 
