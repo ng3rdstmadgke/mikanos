@@ -44,6 +44,13 @@ run: image
   -drive file=disk.img,format=raw \
   -nographic
 
+.PHONY: run-graphic
+run-graphic: image
+	sudo qemu-system-x86_64 \
+  -drive if=pflash,file=OVMF_CODE.fd,format=raw \
+  -drive if=pflash,file=OVMF_VARS.fd,format=raw \
+  -drive file=disk.img,format=raw
+
 .PHONY: clean
 clean:
 	rm -rf hello.efi hello.o disk.img mnt
