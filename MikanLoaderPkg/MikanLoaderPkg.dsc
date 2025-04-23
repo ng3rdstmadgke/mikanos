@@ -25,11 +25,14 @@
   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
 
-  # 追加 >>>
-  #StackCheckLib|MdePkg/Library/StackCheckLib/StackCheckLib.inf
-  #StackCheckFailureHookLib|MdePkg/Library/StackCheckFailureHookLibNull/StackCheckFailureHookLibNull.inf
+  # もとのコードから追加
   RegisterFilterLib|MdePkg/Library/RegisterFilterLibNull/RegisterFilterLibNull.inf
-  # <<< 追加 
+  
+  # 最新のソースコード(edk2-stable202502)だと Conf/target.txt の TOOL_CHAIN_TAG から CLANG38 が削除されており、
+  # TOOL_CHAIN_TAG=CLANGDWARF でビルドするにはさらに以下が必要
+  # StackCheckLib|MdePkg/Library/StackCheckLib/StackCheckLib.inf
+  # StackCheckFailureHookLib|MdePkg/Library/StackCheckFailureHookLibNull/StackCheckFailureHookLibNull.inf  
+
 
 
 #@range_begin(components)
