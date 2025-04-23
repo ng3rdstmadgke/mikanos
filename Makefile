@@ -4,9 +4,10 @@ build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
 	bash bin/build-edk2.sh
 	mkdir -p build
 	cp edk2/Build/MikanLoaderX64/DEBUG_CLANG38/X64/Loader.efi $@
+	chmod +x $@
 
 build/disk.img: build/BOOTX64.EFI
-	qemu-img create -f raw build/disk.img 200M
+	qemu-img create -f raw $@ 200M
 	mkfs.fat -n "MIKAN OS" -s 2 -f 2 -R 32 -F 32 $@
 	sudo parted $@ print
 	mkdir -p build/mnt
