@@ -23,6 +23,15 @@ build-edk2: build/BOOTX64.EFI  ## MikanLoaderPkg を edk2 でビルドします
 .PHONY: build-image
 build-image: build/disk.img  ## OSのイメージファイル(build/disk.img) を作成します
 
+.PHONY: mount-image
+mount-image:  ## OSのイメージファイル(build/disk.img) を build/mnt にマウントします
+	mkdir -p build/mnt
+	sudo mount -o loop build/disk.img build/mnt
+
+.PHONY: umount-image
+umount-image:  ## OSのイメージファイル(build/disk.img) をbuild/mnt からアンマウントします
+	sudo umount build/mnt
+
 .PHONY: run-legacy
 run-legacy: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE.fd, OVMF_VARS.fd を利用)
 	cp resource/OVMF_VARS.fd build/OVMF_VARS.fd
