@@ -6,17 +6,6 @@ build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
 	cp edk2/Build/MikanLoaderX64/DEBUG_CLANG38/X64/Loader.efi $@
 	chmod +x $@
 
-build/disk.img: build/BOOTX64.EFI
-	qemu-img create -f raw $@ 200M
-	mkfs.fat -n "MIKAN OS" -s 2 -f 2 -R 32 -F 32 $@
-	sudo parted $@ print
-	mkdir -p build/mnt
-	sudo mount -o loop $@ build/mnt
-	sudo mkdir -p build/mnt/EFI/BOOT
-	sudo cp $< build/mnt/EFI/BOOT/BOOTX64.EFI
-	sudo umount build/mnt
-	rmdir build/mnt
-
 # -O2 レベル2の最適化を行う
 # -Wall 警告をたくさん出す
 # -g デバッグ情報付きでコンパイルする
@@ -58,6 +47,20 @@ build/kernel/kernel.elf: build/kernel/main.o
 	-static \
 	-o build/kernel/kernel.elf \
 	build/kernel/main.o
+
+
+build/disk.img: build/BOOTX64.EFI build/kernel/kernel.elf
+	qemu-img create -f raw $@ 200M
+	mkfs.fat -n "MIKAN OS" -s 2 -f 2 -R 32 -F 32 $@
+	sudo parted $@ print
+	mkdir -p build/mnt
+	sudo mount -o loop $@ build/mnt
+	sudo mkdir -p build/mnt/EFI/BOOT
+	sudo cp $< build/mnt/EFI/BOOT/BOOTX64.EFI
+	sudo cp build/kernel/kernel.elf build/mnt/kernel.elf
+	sudo umount build/mnt
+	rmdir build/mnt
+
 
 .PHONY: build-edk2
 build-edk2: build/BOOTX64.EFI  ## MikanLoaderPkg を edk2 でビルドします
