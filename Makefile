@@ -17,11 +17,57 @@ build/disk.img: build/BOOTX64.EFI
 	sudo umount build/mnt
 	rmdir build/mnt
 
+# -O2 レベル2の最適化を行う
+# -Wall 警告をたくさん出す
+# -g デバッグ情報付きでコンパイルする
+# --target=x86_64-elf x86_64向けの機械語を生成する。出力ファイルの形式をELFとする
+# -ffreestanding フリースタンディング環境(OSがない環境)向けにコンパイルする
+# -mno-red-zone Red Zone機能を無効にする
+# -fno-exceptions C++の例外機能を使わない
+# -fno-rtti C++の動的型情報を使わない
+# -std=c++17 C++のバージョンをC++17とする
+# -c コンパイルのみする。リンクはしない。
+# -o build/kernel/main.o 出力先を指定
+build/kernel/main.o: kernel/main.cpp
+	mkdir -p build/kernel
+	clang++ \
+	  -O2 \
+	  -Wall \
+	  -g \
+	  --target=x86_64-elf \
+	  -ffreestanding \
+	  -mno-red-zone \
+	  -fno-exceptions \
+	  -fno-rtti \
+	  -std=c++17 \
+	  -c \
+	  -o build/kernel/main.o \
+	  kernel/main.cpp
+
+
+# --entry KernelMain KernelMain()をエントリーポイントとする
+# -z norelro リロケーション情報を読み込み専用にする機能を使わない
+# --image-base 0x100000 出力されたバイナリのベースアドレスを0x100000番地とする
+# -o build/kernel/kernel.elf 出力先を指定
+# --static 静的リンクを行う
+build/kernel/kernel.elf: build/kernel/main.o
+	ld.lld \
+	--entry KernelMain \
+	-z norelro \
+	--image-base 0x100000 \
+	-static \
+	-o build/kernel/kernel.elf \
+	build/kernel/main.o
+
 .PHONY: build-edk2
 build-edk2: build/BOOTX64.EFI  ## MikanLoaderPkg を edk2 でビルドします
 
+.PHONY: build-kernel
+build-kernel: build/kernel/kernel.elf  ## kernel/ 配下のソースコードをビルドし、build/kernel/kernel.elf を作成します。
+
 .PHONY: build-image
 build-image: build/disk.img  ## OSのイメージファイル(build/disk.img) を作成します
+
 
 .PHONY: mount-image
 mount-image:  ## OSのイメージファイル(build/disk.img) を build/mnt にマウントします
