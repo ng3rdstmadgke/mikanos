@@ -43,6 +43,7 @@ run-legacy: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE.f
     -device nec-usb-xhci,id=xhci \
     -device usb-mouse -device usb-kbd \
     -monitor stdio \
+		-s
 
 .PHONY: run-nographic-legacy
 run-nographic-legacy: build-image  ## OSイメージをQEMUのノーグラフィックモードで起動します (OVMF_CODE.fd, OVMF_VARS.fd を利用)
@@ -52,8 +53,11 @@ run-nographic-legacy: build-image  ## OSイメージをQEMUのノーグラフィ
 		-drive if=pflash,format=raw,file=resource/OVMF_CODE.fd,readonly=on \
 		-drive if=pflash,format=raw,file=build/OVMF_VARS.fd \
 		-drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
+		-s \
 		-nographic
 
+# -monitor stdio : ターミナルでQEMUモニタを起動
+# -s : -gdb tcp::1234 のショートカット (QEMUをGDBサーバーモードで起動することで)
 .PHONY: run
 run: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用)
 	cp /usr/share/OVMF/OVMF_VARS_4M.fd build/OVMF_VARS_4M.fd
@@ -65,6 +69,7 @@ run: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE_4M.fd, O
     -device nec-usb-xhci,id=xhci \
     -device usb-mouse -device usb-kbd \
     -monitor stdio \
+		-s
 
 .PHONY: run-nographic
 run-nographic: build-image  ## OSイメージをQEMUのノーグラフィックモードで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用)
@@ -74,6 +79,7 @@ run-nographic: build-image  ## OSイメージをQEMUのノーグラフィック�
 		-drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_CODE_4M.fd,readonly=on \
 		-drive if=pflash,format=raw,file=build/OVMF_VARS_4M.fd \
 		-drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
+		-s \
 		-nographic
 
 .PHONY: clean
