@@ -1,4 +1,5 @@
 #!/bin/bash
+# 参考: https://github.com/uchan-nos/mikanos-build/blob/master/devenv/build-edk2.sh
 
 set -ex
 
