@@ -14,7 +14,8 @@ cd $PROJECT_DIR/edk2
 
 
 # TOOL_CHAIN_TAGにCLANG38が定義できる最新のバージョン
-git checkout edk2-stable202302
+#git checkout edk2-stable202302
+git checkout edk2-stable202208
 
 # サブモジュールを更新
 git submodule update --init --recursive

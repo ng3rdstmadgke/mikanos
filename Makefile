@@ -19,7 +19,7 @@ build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
 # -o build/kernel/main.o 出力先を指定
 build/kernel/main.o: kernel/main.cpp
 	mkdir -p build/kernel
-	clang++ \
+	clang++-18 \
 	  -O2 \
 	  -Wall \
 	  -g \
@@ -40,7 +40,7 @@ build/kernel/main.o: kernel/main.cpp
 # -o build/kernel/kernel.elf 出力先を指定
 # --static 静的リンクを行う
 build/kernel/kernel.elf: build/kernel/main.o
-	ld.lld \
+	ld.lld-18 \
 	--entry KernelMain \
 	-z norelro \
 	--image-base 0x100000 \

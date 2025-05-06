@@ -7,7 +7,8 @@ sudo apt update
 sudo apt-get install -y git vim
 
 # edk2のビルドで必要
-sudo apt-get install -y make clang lld llvm nasm uuid-dev acpica-tools
+#sudo apt-get install -y make clang lld llvm nasm uuid-dev acpica-tools
+sudo apt-get install -y make nasm uuid-dev acpica-tools llvm-18-dev lld-18 clang-18
 
 # イメージの起動で必要
 # - OVMF (Open Virtual Machine Firmware)
