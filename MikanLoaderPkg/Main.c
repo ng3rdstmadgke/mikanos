@@ -3,8 +3,10 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/PrintLib.h>
 #include <Protocol/LoadedImage.h>
+#include  <Protocol/SimpleFileSystem.h>
 #include <Protocol/DiskIo2.h>
 #include <Protocol/BlockIo.h>
+#include  <Guid/FileInfo.h>
 
 // メモリマップの構造体
 // UINTN CPUアーキテクチャ依存の符号なし整数型
@@ -30,28 +32,24 @@ EFI_STATUS GetMemoryMap(struct MemoryMap *map) {
   map->map_size = map->buffer_size;
   // gBS
   //   OSを起動するために必要な機能を提供するブートサービスを表すグローバル変数
-  // gBS->GetMemoryMap()
+  //
+  // EFI_GET_MEMORY_MAP: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L239
   //   呼び出し時点のメモリマップを取得し、MemoryMap（第二引数)で指定されたメモリ領域に書き込みます。
   //   正常にメモリマップが取得できると EFI_SUCCESS を返却。メモリ領域が小さくてメモリマップを書き込めない場合は EFI_BUFFER_TOO_SMALL を返却。
-  // https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L239
+  //
+  // EFI_MEMORY_DESCRIPTOR: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L128
+  //   メモリディスクリプタはメモリマップの個々のエントリ
+  //   UINT32                Type           メモリ領域の種別
+  //   EFI_PHYSICAL_ADDRESS  PhysicalStart  メモリ領域先頭の物理メモリアドレス
+  //   EFI_VIRTUAL_ADDRESS   VirtualStart   メモリ領域先頭の仮想メモリアドレス
+  //   UINT64                NumberOfPages  メモリ領域の大きさ (4KiBページ単位)
+  //   UINT64                Attribute      メモリ領域が使える用途を示すビット集合
   return gBS->GetMemoryMap(
-    // メモリマップ書き込み用のメモリ領域のサイズ(バイト)
-    &map->map_size,
-    // メモリマップ書き込み用メモリ領域の先頭ポインタ。メモリディスクリプタ(構造体)の配列
-    // EFI_MEMORY_DESCRIPTOR: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L128
-    //   UINT32                Type           メモリ領域の種別
-    //   EFI_PHYSICAL_ADDRESS  PhysicalStart  メモリ領域先頭の物理メモリアドレス
-    //   EFI_VIRTUAL_ADDRESS   VirtualStart   メモリ領域先頭の仮想メモリアドレス
-    //   UINT64                NumberOfPages  メモリ領域の大きさ (4KiBページ単位)
-    //   UINT64                Attribute      メモリ領域が使える用途を示すビット集合
-    (EFI_MEMORY_DESCRIPTOR*)map->buffer,
-    // メモリマップを識別するための値を書き込む変数。メモリマップはプログラムの処理やUEFI自体の処理によって変化します。
-    // 2つの時点で取得したMapKeyの値が同じなら、その時間内ではメモリマップに変化がないということを意味します。
-    &map->map_key,
-    // メモリマップの個々の行を表すメモリディスクリプタのバイト数を表します。
-    &map->descriptor_size,
-    // メモリディスクリプタの構造体のバージョン番号
-    &map->descriptor_version
+    &map->map_size,                       // IN OUT UINTN                *MemoryMapSize メモリマップ書き込み用のメモリ領域のサイズ(バイト)
+    (EFI_MEMORY_DESCRIPTOR*)map->buffer,  // OUT  EFI_MEMORY_DESCRIPTOR  *MemoryMap メモリマップ書込み用メモリ領域の先頭ポインタ(メモリディスクリプタの配列)
+    &map->map_key,                        // OUT  UINTN                  *MapKey  メモリマップのハッシュ値的なもの (これに変化がなければメモリマップに変化はない)
+    &map->descriptor_size,                // OUT  UINTN                  *DescriptorSize メモリディスクリプタ のサイズ
+    &map->descriptor_version              // OUT  UINT32                 *DescriptorVersion メモリディスクリプタのバージョン番号
   );
 }
 
@@ -83,17 +81,19 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
  */
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
   CHAR8 buf[256];
+  // UINTN: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/X64/ProcessorBind.h#L229
+  // 32-bitでは4byte, 64-bitでは8byteの符号なし整数
   UINTN len;
 
   CHAR8* header = "Index, Type, Type(name), PhysicalStart, NumberOfPages, Attribute\n";
   // https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Library/BaseLib.h#L1673
   len = AsciiStrLen(header);
-  // EFI_FILE_PROTOCOL.Write: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L539
   // EFI_FILE_WRITE: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L220
-  //   IN EFI_FILE_PROTOCOL  *This,
-  //   IN OUT UINTN          *BufferSize,
-  //   IN VOID               *Buffer
-  file->Write(file, &len, header);
+  file->Write(
+    file,  // IN EFI_FILE_PROTOCOL  *This,
+    &len,  // IN OUT UINTN          *BufferSize,
+    header // IN VOID               *Buffer
+  );
 
   // %08lx : unsigned longの16進数をゼロ埋め8桁で表示 (例: 0000abcd)
   Print(L"map->buffer = %08lx, map->map_size = %08lx\n", map->buffer, map->map_size);
@@ -140,19 +140,13 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
   EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* fs;
 
   // EFI_OPEN_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L1330
-  //   IN  EFI_HANDLE                Handle,
-  //   IN  EFI_GUID                  *Protocol,
-  //   OUT VOID                      **Interface  OPTIONAL,
-  //   IN  EFI_HANDLE                AgentHandle,
-  //   IN  EFI_HANDLE                ControllerHandle,
-  //   IN  UINT32                    Attributes
   gBS->OpenProtocol(
-    image_handle,
-    &gEfiLoadedImageProtocolGuid,
-    (VOID**)&loaded_image,
-    image_handle,
-    NULL,
-    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
+    image_handle,                        // IN  EFI_HANDLE  Handle,
+    &gEfiLoadedImageProtocolGuid,        // IN  EFI_GUID    *Protocol,
+    (VOID**)&loaded_image,               // OUT VOID        **Interface  OPTIONAL,
+    image_handle,                        // IN  EFI_HANDLE  AgentHandle,
+    NULL,                                // IN  EFI_HANDLE  ControllerHandle,
+    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL // IN  UINT32      Attributes
   );
 
   gBS->OpenProtocol(
@@ -165,17 +159,16 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
   );
 
   // EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_OPEN_VOLUME: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L59
-  //   IN  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL  *This,
-  //   OUT EFI_FILE_PROTOCOL                **Root
-  fs->OpenVolume(fs, root);
+  fs->OpenVolume(
+    fs,  // IN  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL  *This,
+    root // OUT EFI_FILE_PROTOCOL                **Root
+  );
 
   return EFI_SUCCESS;
 }
 
 
-EFI_STATUS EFIAPI UefiMain(
-    EFI_HANDLE image_handle,
-    EFI_SYSTEM_TABLE* system_table) {
+EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_table) {
   Print(L"Hello, MikanOS!\n");
 
   /**
@@ -193,7 +186,7 @@ EFI_STATUS EFIAPI UefiMain(
   OpenRootDir(image_handle, &root_dir);
 
   EFI_FILE_PROTOCOL* memmap_file;
-  // https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L113
+  // EFI_FILE_OPEN: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L113
   root_dir->Open(
     root_dir,     // IN EFI_FILE_PROTOCOL *This
     &memmap_file, // OUT EFI_FILE_PROTOCOL **NewHandle
@@ -203,10 +196,124 @@ EFI_STATUS EFIAPI UefiMain(
   );
 
   /**
-   * メモリマップを保存する
+   * メモリマップをファイルに書き出す
    */
   SaveMemoryMap(&memmap, memmap_file);
   memmap_file->Close(memmap_file);
+
+  /**
+   * カーネルファイルを読み取り専用で開く
+   */
+  EFI_FILE_PROTOCOL* kernel_file;
+  root_dir->Open(
+    root_dir,
+    &kernel_file,
+    L"\\kernel.elf",
+    EFI_FILE_MODE_READ,
+    0
+  );
+
+  /**
+   * カーネルファイルのファイルサイズを取得
+   */
+  // EFI_FILE_INFO型を十分格納できる大きさのメモリを確保
+  // FileNameは可変長なのでファイル名が収まるくらいのメモリを追加で確保する必要がある
+  //
+  // EFI_FILE_INFO: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Guid/FileInfo.h#L19
+  //   UINT64    Size;
+  //   UINT64    FileSize;
+  //   UINT64    PhysicalSize;
+  //   EFI_TIME  CreateTime;
+  //   EFI_TIME  LastAccessTime;
+  //   EFI_TIME  ModificationTime;
+  //   UINT64    Attribute;
+  //   CHAR16    FileName[1];
+  UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
+  // UINT8: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/X64/ProcessorBind.h#L167
+  // 1byte符号なし整数
+  UINT8 file_info_buffer[file_info_size];
+
+  // kernel_file を file_info_buffer に展開
+  // EFI_FILE_GET_INFO: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L287
+  kernel_file->GetInfo(
+    kernel_file,        // IN EFI_FILE_PROTOCOL  *This
+    &gEfiFileInfoGuid,  // IN EFI_GUID           *InformationType
+    &file_info_size,    // IN OUT UINTN          *BufferSize
+    file_info_buffer    // OUT VOID              *Buffer
+  );
+
+  EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
+  // カーネルファイルのファイルサイズを取得
+  UINTN kernel_file_size = file_info->FileSize;
+
+  /**
+   * カーネルファイルをメモリに展開
+   */
+  // カーネルファイルは ld.lld の --image-base オプションで 0x100000 に配置して動作させる前提で作ってある
+  EFI_PHYSICAL_ADDRESS kernel_base_addr = 0x100000;
+  // メモリの確保
+  // EFI_ALLOCATE_PAGES: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L211
+  gBS->AllocatePages(
+    // EFI_ALLOCATE_TYPE: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L29
+    //   AllocateAnyPages: どこでもいいからアイている場所に確保
+    //   AllocateMaxAddress: 指定したアドレス以下で空いている場所に確保
+    //   AllocateAddress: 指定したアドレスに確保
+    AllocateAddress,                     // IN     EFI_ALLOCATE_TYPE     Type,       // メモリ確保の方法
+    // EFI_MEMORY_TYPE: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiMultiPhase.h#L38
+    EfiLoaderData,                       // IN     EFI_MEMORY_TYPE       MemoryType, // 確保するメモリ領域の種別
+    // 0xfffは除算で切り捨てされてしまう問題の対応
+    (kernel_file_size + 0xfff) / 0x1000, // IN     UINTN                 Pages,      // 確保するメモリのサイズ(ページ単位なので4KiB(0x1000バイト)で除算)
+    &kernel_base_addr                    // IN OUT EFI_PHYSICAL_ADDRESS  *Memory     // 確保したメモリ領域のアドレスを書き込む変数
+  );
+  // EFI_FILE_READ: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L192
+  kernel_file->Read(
+    kernel_file,             // IN EFI_FILE_PROTOCOL  *This
+    &kernel_file_size,       // IN OUT UINTN          *BufferSize
+    (VOID*)kernel_base_addr  // OUT VOID              *Buffer
+  );
+  Print(L"Kernel: 0x%0lx (%lu bytes)\n", kernel_base_addr, kernel_file_size);
+
+  /**
+   * カーネルの起動
+   */
+  // UINT64: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/X64/ProcessorBind.h#L180
+  // メモリ上でエントリーポイントがおいてあるアドレス
+  // ELF形式の仕様では64bit用のELFのエントリポイントアドレスはオフセット24byteの位置から8バイト整数として書かれる事になっている
+  // ELFの情報は readelf -h build/kernel/kernel.elf で確認できる
+  UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
+
+  // エントリポイントをC言語の関数として呼び出すために、関数ポインタにキャスト
+  typedef void EntryPointType(void);
+  EntryPointType* entry_point = (EntryPointType*)entry_addr;
+  Print(L"entry_point: 0x%p\n", entry_point);
+
+  /**
+   * カーネル起動前にUEFI BIOSのブートサービスを停止
+   */
+  EFI_STATUS status;
+  // EFI_EXIT_BOOT_SERVICES: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L983
+  //   ブートサービスを停止させる。この関数が成功した場合、以降にブートサービスの機能を使うことはできない。
+  status = gBS->ExitBootServices(
+    image_handle,  // IN  EFI_HANDLE ImageHandle
+    memmap.map_key // IN  UINTN      MapKey       最新のメモリマップのマップキーを要求。マップキーが最新のメモリマップに紐づく値でない場合は失敗する
+  );
+  if (EFI_ERROR(status)) { // 停止に失敗した場合はリトライ
+    // 最新のメモリマップを取得
+    status = GetMemoryMap(&memmap);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to get memory map: %r\n", status);
+      while (1);
+    }
+    // 停止をリトライ
+    status = gBS->ExitBootServices(image_handle, memmap.map_key);
+    if (EFI_ERROR(status)) {
+      Print(L"Could not exit boot service: %r\n", status);
+      while (1);
+    }
+  }
+
+  // 関数ポインタを実行
+  entry_point();
 
   Print(L"All done\n");
 
