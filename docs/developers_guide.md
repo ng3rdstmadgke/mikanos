@@ -3,17 +3,27 @@
 ```bash
 sudo apt update
 
-# とりあえず必要なパッケージ
-sudo apt-get install -y git vim
+# mikanos-buildで必要とされているパッケージ (llvm-dev, lld, clang は 14 ではなく 18にしている)
+# https://github.com/uchan-nos/mikanos-build/blob/master/devenv/ansible_provision.yml#L4
+sudo apt-get install -y \
+  build-essential \
+  llvm-18-dev \
+  lld-18 \
+  clang-18 \
+  nasm \
+  acpica-tools \
+  uuid-dev \
+  qemu-system-x86 \
+  qemu-utils \
+  xauth \
+  unzip \
+  ca-certificates \
 
-# edk2のビルドで必要
-#sudo apt-get install -y make clang lld llvm nasm uuid-dev acpica-tools
-sudo apt-get install -y make nasm uuid-dev acpica-tools llvm-18-dev lld-18 clang-18
-
-# イメージの起動で必要
+# その他必要なもの
 # - OVMF (Open Virtual Machine Firmware)
-#   QEMU などの仮想マシンで UEFI をサポートするためのファームウェアで、EDK IIプロジェクトの一部として提供されています。
-sudo apt-get install -y qemu-system-x86 ovmf
+#   QEMU などの仮想マシンで UEFI をサポートするためのファームウェアで、EDK IIプロジェクトの一部として提供されています
+sudo apt-get install -y git vim make ovmf
+
 ```
 
 # Qemuで実行
