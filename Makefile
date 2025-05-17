@@ -62,8 +62,8 @@ build/disk.img: build/BOOTX64.EFI build/kernel/kernel.elf
 	rmdir build/mnt
 
 
-.PHONY: build-edk2
-build-edk2: build/BOOTX64.EFI  ## MikanLoaderPkg を edk2 でビルドします
+.PHONY: build-bootloader
+build-bootloader: build/BOOTX64.EFI  ## MikanLoaderPkg を edk2 でビルドします
 
 .PHONY: build-kernel
 build-kernel: build/kernel/kernel.elf  ## kernel/ 配下のソースコードをビルドし、build/kernel/kernel.elf を作成します。

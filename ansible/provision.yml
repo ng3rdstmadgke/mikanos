@@ -1,0 +1,100 @@
+---
+# mikanos-buildで必要とされているパッケージ (llvm-dev, lld, clang は 14 ではなく 18にしている)
+# https://github.com/uchan-nos/mikanos-build/blob/master/devenv/ansible_provision.yml#L4
+- hosts: all
+  tasks:
+    - name: ensure development tools are at the latest version
+      become: yes
+      apt:
+        name:
+          - build-essential
+          - llvm-18-dev
+          - lld-18
+          - clang-18
+          - nasm
+          - acpica-tools
+          - uuid-dev
+          - qemu-system-x86
+          - qemu-utils
+          - xauth
+          - unzip
+          - python3-distutils-extra
+          - ca-certificates
+          # その他必要なもの
+          - make
+          - ovmf # (Open Virtual Machine Firmware) QEMU などの仮想マシンで UEFI をサポートするためのファームウェア
+          - git
+          - vim
+        state: latest
+        install_recommends: no
+
+    - name: check whether qemu-system-gui exists
+      command: dpkg-query --show qemu-system-gui
+      failed_when: False
+      changed_when: False
+      register: qemu_gui_result
+
+    - name: install qemu gui package if exists
+      become: yes
+      apt: name=qemu-system-gui state=latest install_recommends=no
+      when: qemu_gui_result.rc == 0
+
+    - name: set llvm 18 as default
+      become: yes
+      alternatives:
+        name: "{{ item }}"
+        link: "/usr/bin/{{ item }}"
+        path: "/usr/bin/{{ item }}-18"
+      with_items:
+        - llvm-PerfectShuffle
+        - llvm-ar
+        - llvm-as
+        - llvm-bcanalyzer
+        - llvm-cat
+        - llvm-cfi-verify
+        - llvm-config
+        - llvm-cov
+        - llvm-c-test
+        - llvm-cvtres
+        - llvm-cxxdump
+        - llvm-cxxfilt
+        - llvm-diff
+        - llvm-dis
+        - llvm-dlltool
+        - llvm-dwarfdump
+        - llvm-dwp
+        - llvm-exegesis
+        - llvm-extract
+        - llvm-lib
+        - llvm-link
+        - llvm-lto
+        - llvm-lto2
+        - llvm-mc
+        - llvm-mca
+        - llvm-modextract
+        - llvm-mt
+        - llvm-nm
+        - llvm-objcopy
+        - llvm-objdump
+        - llvm-opt-report
+        - llvm-pdbutil
+        - llvm-profdata
+        - llvm-ranlib
+        - llvm-rc
+        - llvm-readelf
+        - llvm-readobj
+        - llvm-rtdyld
+        - llvm-size
+        - llvm-split
+        - llvm-stress
+        - llvm-strings
+        - llvm-strip
+        - llvm-symbolizer
+        - llvm-tblgen
+        - llvm-undname
+        - llvm-xray
+        - ld.lld
+        - lld-link
+        - clang
+        - clang++
+        - clang-cpp
