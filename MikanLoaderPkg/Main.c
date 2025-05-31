@@ -438,7 +438,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
   UINT64 entry_addr = *(UINT64*)(kernel_first_addr + 24);
 
   // エントリポイントをC言語の関数として呼び出すために、関数ポインタにキャスト
-  typedef void EntryPointType(void);
+  typedef void EntryPointType(UINT64, UINT64);
   EntryPointType* entry_point = (EntryPointType*)entry_addr;
   Print(L"entry_point: 0x%p\n", entry_point);
 
@@ -467,7 +467,10 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
   }
 
   // 関数ポインタを実行
-  entry_point();
+  entry_point(
+    gop->Mode->FrameBufferBase,
+    gop->Mode->FrameBufferSize
+  );
 
   Print(L"All done\n");
 

@@ -6,6 +6,10 @@ build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
 	cp edk2/Build/MikanLoaderX64/DEBUG_CLANG38/X64/Loader.efi $@
 	chmod +x $@
 
+build/x86_64-elf/include/c++/v1:
+	docker pull uchannos/stdlib-builder:1.1
+	docker run -v ./build/x86_64-elf:/usr/local/x86_64-elf uchannos/stdlib-builder:1.1
+
 # -O2 レベル2の最適化を行う
 # -Wall 警告をたくさん出す
 # -g デバッグ情報付きでコンパイルする
@@ -17,9 +21,13 @@ build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
 # -std=c++17 C++のバージョンをC++17とする
 # -c コンパイルのみする。リンクはしない。
 # -o build/kernel/main.o 出力先を指定
-build/kernel/main.o: kernel/main.cpp
+build/kernel/main.o: kernel/main.cpp build/x86_64-elf/include/c++/v1
 	mkdir -p build/kernel
 	clang++-18 \
+	  -Ibuild/x86_64-elf/include/c++/v1 -Ibuild/x86_64-elf/include -Ibuild/x86_64-elf/include/freetype2 \
+	  -Iedk2/MdePkg/Include -Iedk2/MdePkg/Include/X64 \
+	  -nostdlibinc -D__ELF__ -D_LDBL_EQ_DBL -D_GNU_SOURCE -D_POSIX_TIMERS \
+	  -DEFIAPI='__attribute__((ms_abi))' \
 	  -O2 \
 	  -Wall \
 	  -g \
