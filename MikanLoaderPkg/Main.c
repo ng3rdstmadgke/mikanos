@@ -36,7 +36,7 @@ EFI_STATUS GetMemoryMap(struct MemoryMap *map) {
   }
 
   map->map_size = map->buffer_size;
-  // gBS
+  // gBS(EFI_BOOT_SERVICES): https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiSpec.h#L1863
   //   OSを起動するために必要な機能を提供するブートサービスを表すグローバル変数
   //
   // EFI_GET_MEMORY_MAP: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L239
@@ -147,13 +147,16 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
 
   // EFI_OPEN_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L1330
   //   UEFI対応のファイルシステム上でファイルやディレクトリに対する入出力操作を行うためのインターフェース
+  // EFI_GUID: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiBaseType.h#L24
+  //           https://github.com/tianocore/edk2/blob/edk2-stable202208/BaseTools/Source/C/Include/Common/BaseTypes.h#L127
+  //   UEFI環境で「何かを一意に識別するための型」であり、主にプロトコルやサービスの個別識別、データ構造の区別などの用途で使われます。
   gBS->OpenProtocol(
-    image_handle,                        // IN  EFI_HANDLE  Handle,
-    &gEfiLoadedImageProtocolGuid,        // IN  EFI_GUID    *Protocol,
-    (VOID**)&loaded_image,               // OUT VOID        **Interface  OPTIONAL,
-    image_handle,                        // IN  EFI_HANDLE  AgentHandle,
-    NULL,                                // IN  EFI_HANDLE  ControllerHandle,
-    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL // IN  UINT32      Attributes
+    image_handle,                        // IN  EFI_HANDLE  Handle,               オープンされているプロトコルインタフェースのハンドル
+    &gEfiLoadedImageProtocolGuid,        // IN  EFI_GUID    *Protocol             プロトコルのGUID(識別子)
+    (VOID**)&loaded_image,               // OUT VOID        **Interface  OPTIONAL 対応するプロトコルインタフェースへのポインタが返されるアドレス
+    image_handle,                        // IN  EFI_HANDLE  AgentHandle           Protocol と Interface で指定されたプロトコルとインターフェースを開いているエージェントのハンドル。
+    NULL,                                // IN  EFI_HANDLE  ControllerHandle      エージェントがUEFIドライバモデルに従うドライバの場合はプロトコルインターフェイスを必要とするコントローラハンドル、そうでなければNULL
+    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL // IN  UINT32      Attributes            Handle と Protocol で指定されたプロトコルインタフェースのオープンモード。
   );
 
   gBS->OpenProtocol(
@@ -227,6 +230,52 @@ VOID CopyLoadSegments(Elf64_Ehdr* ehdr) {
   }
 }
 
+EFI_STATUS OpenGOP(EFI_HANDLE image_handle, EFI_GRAPHICS_OUTPUT_PROTOCOL** gop) {
+  UINTN num_gop_handles = 0;
+  EFI_HANDLE* gop_handles = NULL;
+  // EFI_LOCATE_HANDLE_BUFFER: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiSpec.h#L1570
+  // リクエストされたプロトコルをサポートするハンドルの配列を取得する
+  gBS->LocateHandleBuffer(
+    ByProtocol,                      // IN  EFI_LOCATE_SEARCH_TYPE  SearchType            返却されるハンドルの指定
+    &gEfiGraphicsOutputProtocolGuid, // IN  EFI_GUID                *Protocol   OPTIONAL  検索するプロトコルを指定(SearchType=ByProtocolの場合のみ有効)
+    NULL,                            // IN  VOID                    *SearchKey  OPTIONAL  SearchType に応じた検索キーを指定
+    &num_gop_handles,                // OUT UINTN                   *NoHandles            取得したハンドルの数
+    &gop_handles                     // OUT EFI_HANDLE              **Buffer              バッファから返却されたハンドルの配列
+  );
+  // EFI_OPEN_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L1330
+  //   ハンドルが指定されたプロトコルをサポートしているかを問い合わせ、 サポートしている場合、呼び出し元のエージェントに代わってプロトコルをオープンする
+  gBS->OpenProtocol(
+    gop_handles[0],
+    &gEfiGraphicsOutputProtocolGuid,
+    (VOID**)gop,
+    image_handle,
+    NULL,
+    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
+  );
+  return EFI_SUCCESS;
+}
+
+/**
+ * EFI_GRAPHICS_PIXEL_FORMATを文字列に変換する
+ */
+const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt) {
+  // EFI_GRAPHICS_PIXEL_FORMAT: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Protocol/GraphicsOutput.h#L28
+  switch (fmt) {
+    case PixelRedGreenBlueReserved8BitPerColor:
+      return L"PixelRedGreenBlueReserved8BitPerColor";
+    case PixelBlueGreenRedReserved8BitPerColor:
+      return L"PixelBlueGreenRedReserved8BitPerColor";
+    case PixelBitMask:
+      return L"PixelBitMask";
+    case PixelBltOnly:
+      return L"PixelBltOnly";
+    case PixelFormatMax:
+      return L"PixelFormatMax";
+    default:
+      return L"InvalidPixelFormat";
+  }
+}
+
 EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_table) {
   EFI_STATUS status;
   Print(L"Hello, MikanOS!\n");
@@ -261,6 +310,30 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
    */
   SaveMemoryMap(&memmap, memmap_file);
   memmap_file->Close(memmap_file);
+
+  /**
+   * GOPを取得して画面描画する
+   */
+  // EFI_GRAPHICS_OUTPUT_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Protocol/GraphicsOutput.h#L258
+  EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
+  OpenGOP(image_handle, &gop);
+  // EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Protocol/GraphicsOutput.h#L224
+  Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line\n",
+    gop->Mode->Info->HorizontalResolution,  // 水平方向のピクセル数
+    gop->Mode->Info->VerticalResolution,    // 垂直方向のピクセル数
+    GetPixelFormatUnicode(gop->Mode->Info->PixelFormat),  // フレームバッファで1ピクセルを表すデータ形式
+    gop->Mode->Info->PixelsPerScanLine  // ビデオメモリラインあたりのピクセル数
+  );
+  Print(L"Frame Buffer: 0x%0lx - 0x%0lx, Size: %lu bytes\n",
+    gop->Mode->FrameBufferBase,  // フレームバッファの先頭アドレス
+    gop->Mode->FrameBufferBase + gop->Mode->FrameBufferSize,  // フレームバッファの末尾アドレス
+    gop->Mode->FrameBufferSize  // フレームバッファの全体サイズ
+  );
+
+  UINT8* frame_buffer = (UINT8*)gop->Mode->FrameBufferBase;
+  for (UINTN i = 0; i < gop->Mode->FrameBufferSize; i++) {
+    frame_buffer[i] = 255;
+  }
 
 
   /**
@@ -400,4 +473,5 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
 
   while(1);
   return EFI_SUCCESS;
+
 }
