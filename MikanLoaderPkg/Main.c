@@ -86,6 +86,7 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
  * メモリマップをCSV形式でファイルに保存する
  */
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
+  EFI_STATUS status;
   CHAR8 buf[256];
   // UINTN: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/X64/ProcessorBind.h#L229
   // 32-bitでは4byte, 64-bitでは8byteの符号なし整数
@@ -95,13 +96,17 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
   // https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Library/BaseLib.h#L1673
   len = AsciiStrLen(header);
   // EFI_FILE_WRITE: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L220
-  file->Write(
+  status = file->Write(
     file,  // IN EFI_FILE_PROTOCOL  *This,
     &len,  // IN OUT UINTN          *BufferSize,
     header // IN VOID               *Buffer
   );
+  if (EFI_ERROR(status)) {
+    return status;
+  }
 
   // %08lx : unsigned longの16進数をゼロ埋め8桁で表示 (例: 0000abcd)
+  // Print関数のフォーマット指定子の仕様: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Library/PrintLib.h#L2-L168
   Print(L"map->buffer = %08lx, map->map_size = %08lx\n", map->buffer, map->map_size);
 
   // EFI_PHYSICAL_ADDRESS: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiBaseType.h#L50
@@ -132,7 +137,10 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
       desc->NumberOfPages,
       desc->Attribute & 0xffffflu
     );
-    file->Write(file, &len, buf);
+    status = file->Write(file, &len, buf);
+    if (EFI_ERROR(status)) {
+      return status;
+    }
   }
   return EFI_SUCCESS;
 }
@@ -141,6 +149,7 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
  * 書き込み先のファイルを開く
  */
 EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
+  EFI_STATUS status;
   EFI_LOADED_IMAGE_PROTOCOL* loaded_image;
   // https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L73
   EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* fs;
@@ -150,7 +159,7 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
   // EFI_GUID: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiBaseType.h#L24
   //           https://github.com/tianocore/edk2/blob/edk2-stable202208/BaseTools/Source/C/Include/Common/BaseTypes.h#L127
   //   UEFI環境で「何かを一意に識別するための型」であり、主にプロトコルやサービスの個別識別、データ構造の区別などの用途で使われます。
-  gBS->OpenProtocol(
+  status = gBS->OpenProtocol(
     image_handle,                        // IN  EFI_HANDLE  Handle,               オープンされているプロトコルインタフェースのハンドル
     &gEfiLoadedImageProtocolGuid,        // IN  EFI_GUID    *Protocol             プロトコルのGUID(識別子)
     (VOID**)&loaded_image,               // OUT VOID        **Interface  OPTIONAL 対応するプロトコルインタフェースへのポインタが返されるアドレス
@@ -158,8 +167,11 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
     NULL,                                // IN  EFI_HANDLE  ControllerHandle      エージェントがUEFIドライバモデルに従うドライバの場合はプロトコルインターフェイスを必要とするコントローラハンドル、そうでなければNULL
     EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL // IN  UINT32      Attributes            Handle と Protocol で指定されたプロトコルインタフェースのオープンモード。
   );
+  if (EFI_ERROR(status)) {
+    return status;
+  }
 
-  gBS->OpenProtocol(
+  status = gBS->OpenProtocol(
     loaded_image->DeviceHandle,
     &gEfiSimpleFileSystemProtocolGuid,
     (VOID**)&fs,
@@ -167,16 +179,17 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
     NULL,
     EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
   );
+  if (EFI_ERROR(status)) {
+    return status;
+  }
 
   // EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_OPEN_VOLUME: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L59
   //   EFI_SIMPLE_FILE_SYSTEM_PROTOCOL 構造体のメンバー関数
   //   ファイルシステムボリュームのルートディレクトリを開く
-  fs->OpenVolume(
+  return fs->OpenVolume(
     fs,  // IN  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL  *This,
     root // OUT EFI_FILE_PROTOCOL                **Root
   );
-
-  return EFI_SUCCESS;
 }
 
 
@@ -231,20 +244,24 @@ VOID CopyLoadSegments(Elf64_Ehdr* ehdr) {
 }
 
 EFI_STATUS OpenGOP(EFI_HANDLE image_handle, EFI_GRAPHICS_OUTPUT_PROTOCOL** gop) {
+  EFI_STATUS status;
   UINTN num_gop_handles = 0;
   EFI_HANDLE* gop_handles = NULL;
   // EFI_LOCATE_HANDLE_BUFFER: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiSpec.h#L1570
   // リクエストされたプロトコルをサポートするハンドルの配列を取得する
-  gBS->LocateHandleBuffer(
+  status = gBS->LocateHandleBuffer(
     ByProtocol,                      // IN  EFI_LOCATE_SEARCH_TYPE  SearchType            返却されるハンドルの指定
     &gEfiGraphicsOutputProtocolGuid, // IN  EFI_GUID                *Protocol   OPTIONAL  検索するプロトコルを指定(SearchType=ByProtocolの場合のみ有効)
     NULL,                            // IN  VOID                    *SearchKey  OPTIONAL  SearchType に応じた検索キーを指定
     &num_gop_handles,                // OUT UINTN                   *NoHandles            取得したハンドルの数
     &gop_handles                     // OUT EFI_HANDLE              **Buffer              バッファから返却されたハンドルの配列
   );
+  if (EFI_ERROR(status)) {
+    return status;
+  }
   // EFI_OPEN_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L1330
   //   ハンドルが指定されたプロトコルをサポートしているかを問い合わせ、 サポートしている場合、呼び出し元のエージェントに代わってプロトコルをオープンする
-  gBS->OpenProtocol(
+  status = gBS->OpenProtocol(
     gop_handles[0],
     &gEfiGraphicsOutputProtocolGuid,
     (VOID**)gop,
@@ -252,7 +269,10 @@ EFI_STATUS OpenGOP(EFI_HANDLE image_handle, EFI_GRAPHICS_OUTPUT_PROTOCOL** gop) 
     NULL,
     EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
   );
-  return EFI_SUCCESS;
+  if (EFI_ERROR(status)) {
+    return status;
+  }
+  return gBS->FreePool(gop_handles);
 }
 
 /**
@@ -276,7 +296,14 @@ const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt) {
   }
 }
 
+void Halt(void) {
+  while (1) __asm__("hlt");
+}
+
 EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_table) {
+  // EFI_STATUS: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiBaseType.h#L28
+  // EFI_STATUS一覧: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiBaseType.h#L108-L151
+  // 実態はRETURN_STATUS: https://github.com/tianocore/edk2/blob/edk2-stable202208/BaseTools/Source/C/Include/Common/BaseTypes.h#L197-L241
   EFI_STATUS status;
   Print(L"Hello, MikanOS!\n");
 
@@ -285,7 +312,16 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
    */
   CHAR8 memmap_buf[4096 * 4]; // 4page分
   struct MemoryMap memmap = {sizeof(memmap_buf), memmap_buf, 0, 0, 0, 0};
-  GetMemoryMap(&memmap);
+  status = GetMemoryMap(&memmap);
+  // EFI_ERROR: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Uefi/UefiBaseType.h#L158
+  //   - RETURN_ERROR(a): https://github.com/tianocore/edk2/blob/edk2-stable202208/BaseTools/Source/C/Include/Common/BaseTypes.h#L205C1-L205C70
+  //     (((INTN)(RETURN_STATUS)(a)) < 0)
+  //     引数aをRETURN_STATUS型にキャストしてから、さらにに符号付き整数型にキャストして、値が負であるかを判定している。(エラーコードは最上位ビットが1であるためであるため符号付き整数として解釈すると負の値になる)
+  if (EFI_ERROR(status)) {
+    // %rはRETURN_STATUSの値を展開する: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Library/PrintLib.h#L108
+    Print(L"failed to get memory map: %r\n", status);
+    Halt();
+  }
 
   /**
    * メモリマップを保存するファイルを開く
@@ -293,30 +329,50 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
   // EFI_FILE_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L528
   //   ファイルシステム上のファイルやディレクトリに対する入出力操作を行うためのインターフェース
   EFI_FILE_PROTOCOL* root_dir;
-  OpenRootDir(image_handle, &root_dir);
+  status = OpenRootDir(image_handle, &root_dir);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open root directory: %r\n", status);
+    Halt();
+  }
 
   EFI_FILE_PROTOCOL* memmap_file;
   // EFI_FILE_OPEN: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L113
-  root_dir->Open(
+  status = root_dir->Open(
     root_dir,     // IN EFI_FILE_PROTOCOL *This
     &memmap_file, // OUT EFI_FILE_PROTOCOL **NewHandle
     L"\\memmap",  // IN CHAR16 *FileName
     EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,  // IN UINT64 OpenMode
     0             // IN UINT64 Attributes
   );
-
-  /**
-   * メモリマップをファイルに書き出す
-   */
-  SaveMemoryMap(&memmap, memmap_file);
-  memmap_file->Close(memmap_file);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open file '\\memmap': %r\n", status);
+    Print(L"Ignored.\n");
+  } else {
+    /**
+     * メモリマップをファイルに書き出す
+     */
+    SaveMemoryMap(&memmap, memmap_file);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to save memory map: %r\n", status);
+      Halt();
+    }
+    memmap_file->Close(memmap_file);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to close memory map: %r\n", status);
+      Halt();
+    }
+  }
 
   /**
    * GOPを取得して画面描画する
    */
   // EFI_GRAPHICS_OUTPUT_PROTOCOL: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Protocol/GraphicsOutput.h#L258
   EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
-  OpenGOP(image_handle, &gop);
+  status = OpenGOP(image_handle, &gop);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open GOP: %r\n", status);
+    Halt();
+  }
   // EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE: https://github.com/tianocore/edk2/blob/edk2-stable202208/MdePkg/Include/Protocol/GraphicsOutput.h#L224
   Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line\n",
     gop->Mode->Info->HorizontalResolution,  // 水平方向のピクセル数
@@ -340,13 +396,17 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
    * カーネルファイルを読み取り専用で開く
    */
   EFI_FILE_PROTOCOL* kernel_file;
-  root_dir->Open(
+  status = root_dir->Open(
     root_dir,
     &kernel_file,
     L"\\kernel.elf",
     EFI_FILE_MODE_READ,
     0
   );
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open file '\\kernel.elf': %r\n", status);
+    Halt();
+  }
 
   /**
    * カーネルファイルのファイルサイズを取得
@@ -368,15 +428,18 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
   // 1byte符号なし整数
   UINT8 file_info_buffer[file_info_size];
 
-  // kernel_file を file_info_buffer に展開
+  // kernel_file のファイル情報を取得
   // EFI_FILE_GET_INFO: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Protocol/SimpleFileSystem.h#L287
-  kernel_file->GetInfo(
+  status = kernel_file->GetInfo(
     kernel_file,        // IN EFI_FILE_PROTOCOL  *This
     &gEfiFileInfoGuid,  // IN EFI_GUID           *InformationType
     &file_info_size,    // IN OUT UINTN          *BufferSize
     file_info_buffer    // OUT VOID              *Buffer
   );
-
+  if (EFI_ERROR(status)) {
+    Print(L"failed to get file information: %r\n", status);
+    Halt();
+  }
   EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
   // カーネルファイルのファイルサイズを取得
   UINTN kernel_file_size = file_info->FileSize;
@@ -385,20 +448,31 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
    * カーネルファイルを一時領域に読み込む
    */
   VOID* kernel_buffer;
+  // カーネルを読み込むための一時メモリ領域を確保
   // EFI_ALLOCATE_POOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h#L268
-  gBS->AllocatePool(
+  status = gBS->AllocatePool(
     EfiLoaderData,     // IN  EFI_MEMORY_TYPE  PoolType,
     kernel_file_size,  // IN  UINTN            Size,
     &kernel_buffer     // OUT VOID             **Buffer
   );
-  kernel_file->Read(
+  if (EFI_ERROR(status)) {
+    Print(L"failed to allocate pool: %r", status);
+    Halt();
+  }
+
+  // 確保したメモリにカーネルファイルを読み込む
+  status = kernel_file->Read(
     kernel_file,             // IN EFI_FILE_PROTOCOL  *This
     &kernel_file_size,       // IN OUT UINTN          *BufferSize
     (VOID*)kernel_buffer     // OUT VOID              *Buffer
   );
+  if (EFI_ERROR(status)) {
+    Print(L"error: %r", status);
+    Halt();
+  }
 
   /**
-   * コピー先のメモリを確保
+   * カーネルファイルの最終ロード先のメモリを確保
    */
   Elf64_Ehdr* kernel_ehdr = (Elf64_Ehdr*)kernel_buffer;
   UINT64 kernel_first_addr, kernel_last_addr;
@@ -418,13 +492,18 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
     num_pages,         // IN     UINTN                Pages
     &kernel_first_addr // IN OUT EFI_PHYSICAL_ADDRESS *Memory
   );
+  if (EFI_ERROR(status)) {
+    Print(L"failed to allocate pages: %r", status);
+    Halt();
+  }
 
   /**
-   * LOADセグメントを確保したメモリ領域にコピー
+   * カーネルファイル(ELFファイル)LOADセグメントを確保したメモリ領域にコピー
    */
   CopyLoadSegments(kernel_ehdr);
   Print(L"Kernel: 0x%0lx - 0x%lx\n", kernel_first_addr, kernel_last_addr);
 
+  // 確保したメモリを開放
   // EFI_FREE_POOL: https://github.com/tianocore/edk2/blob/edk2-stable202302/MdePkg/Include/Uefi/UefiSpec.h?utm_source=chatgpt.com#L285
   status = gBS->FreePool(kernel_buffer);
 
