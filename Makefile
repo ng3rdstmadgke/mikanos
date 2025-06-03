@@ -1,14 +1,16 @@
 MIKAN_LOADER_PKG := $(wildcard MikanLoaderPkg/*)
+USER_ID := $(shell id -u)
 
 build/BOOTX64.EFI: $(MIKAN_LOADER_PKG)
+	mkdir -p $(BUILD_DIR)
 	bash bin/build-edk2.sh
-	mkdir -p build
 	cp edk2/Build/MikanLoaderX64/DEBUG_CLANG38/X64/Loader.efi $@
 	chmod +x $@
 
+# docker run -v $(HOST_DIR)/build/x86_64-elf:/usr/local/x86_64-elf uchannos/stdlib-builder:1.1
 build/x86_64-elf/include/c++/v1:
 	docker pull uchannos/stdlib-builder:1.1
-	docker run -v ./build/x86_64-elf:/usr/local/x86_64-elf uchannos/stdlib-builder:1.1
+	sudo chmod -R $(USER_ID):$(USER_ID) $(PROJECT_DIR)/build/x86_64-elf
 
 # -O2 レベル2の最適化を行う
 # -Wall 警告をたくさん出す
@@ -23,7 +25,7 @@ build/x86_64-elf/include/c++/v1:
 # -o build/kernel/main.o 出力先を指定
 build/kernel/main.o: kernel/main.cpp build/x86_64-elf/include/c++/v1
 	mkdir -p build/kernel
-	clang++-18 \
+	clang++ \
 	  -Ibuild/x86_64-elf/include/c++/v1 -Ibuild/x86_64-elf/include -Ibuild/x86_64-elf/include/freetype2 \
 	  -Iedk2/MdePkg/Include -Iedk2/MdePkg/Include/X64 \
 	  -nostdlibinc -D__ELF__ -D_LDBL_EQ_DBL -D_GNU_SOURCE -D_POSIX_TIMERS \
@@ -48,7 +50,7 @@ build/kernel/main.o: kernel/main.cpp build/x86_64-elf/include/c++/v1
 # -o build/kernel/kernel.elf 出力先を指定
 # --static 静的リンクを行う
 build/kernel/kernel.elf: build/kernel/main.o
-	ld.lld-18 \
+	ld.lld \
 	--entry KernelMain \
 	-z norelro \
 	--image-base 0x100000 \
@@ -89,59 +91,9 @@ mount-image:  ## OSのイメージファイル(build/disk.img) を build/mnt に
 umount-image:  ## OSのイメージファイル(build/disk.img) をbuild/mnt からアンマウントします
 	sudo umount build/mnt
 
-.PHONY: run-legacy
-run-legacy: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE.fd, OVMF_VARS.fd を利用)
-	cp resource/OVMF_VARS.fd build/OVMF_VARS.fd
-	sudo qemu-system-x86_64 \
-	  -m 1G \
-	  -drive if=pflash,format=raw,file=resource/OVMF_CODE.fd,readonly=on \
-	  -drive if=pflash,format=raw,file=build/OVMF_VARS.fd \
-	  -drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
-	  -device nec-usb-xhci,id=xhci \
-	  -device usb-mouse -device usb-kbd \
-	  -monitor stdio \
-	  -s
-
-.PHONY: run-nographic-legacy
-run-nographic-legacy: build-image  ## OSイメージをQEMUのノーグラフィックモードで起動します (OVMF_CODE.fd, OVMF_VARS.fd を利用)
-	cp resource/OVMF_VARS.fd build/OVMF_VARS.fd
-	sudo qemu-system-x86_64 \
-	  -m 1G \
-	  -drive if=pflash,format=raw,file=resource/OVMF_CODE.fd,readonly=on \
-	  -drive if=pflash,format=raw,file=build/OVMF_VARS.fd \
-	  -drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
-	  -s \
-	  -nographic
-
-# -monitor stdio : ターミナルでQEMUモニタを起動
-# -s : -gdb tcp::1234 のショートカット (QEMUをGDBサーバーモードで起動することで)
-.PHONY: run
-run: build-image  ## OSイメージをQEMUで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用)
-	cp /usr/share/OVMF/OVMF_VARS_4M.fd build/OVMF_VARS_4M.fd
-	sudo qemu-system-x86_64 \
-	  -m 1G \
-	  -drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_CODE_4M.fd,readonly=on \
-	  -drive if=pflash,format=raw,file=build/OVMF_VARS_4M.fd \
-	  -drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
-	  -device nec-usb-xhci,id=xhci \
-	  -device usb-mouse -device usb-kbd \
-	  -monitor stdio \
-	  -s
-
-.PHONY: run-nographic
-run-nographic: build-image  ## OSイメージをQEMUのノーグラフィックモードで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用)
-	cp /usr/share/OVMF/OVMF_VARS_4M.fd build/OVMF_VARS_4M.fd
-	sudo qemu-system-x86_64 \
-	  -m 1G \
-	  -drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_CODE_4M.fd,readonly=on \
-	  -drive if=pflash,format=raw,file=build/OVMF_VARS_4M.fd \
-	  -drive if=ide,index=0,media=disk,format=raw,file=build/disk.img \
-	  -s \
-	  -nographic
-
 .PHONY: clean
 clean:	## ビルドしたファイルを削除します
-	rm -rf build
+	rm -rf build/BOOTX64.EFI build/disk.img build/OVMF_VARS* build/kernel
 
 .PHONY: help
 .DEFAULT_GOAL := help

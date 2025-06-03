@@ -1,20 +1,34 @@
-# 環境構築整備
+# ホスト側の環境整備
 
+## QEMUのインストール
 
 ```bash
 sudo apt update
-sudo apt install -y ansible
-ansible-playbook -K -i ansible/inventory ansible/provision.yml
+sudo apt install -y qemu-system-x86 qemu-utils qemu-system-gui
 ```
+
+## Dockerのインストール
+
+https://docs.docker.com/engine/install/
+
 
 # Qemuで実行
 
-```bash
-# OSイメージをQEMUで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用) 
-make run
+devcontainerでイメージをビルド
 
-# OSイメージをQEMUのノーグラフィックモードで起動します (OVMF_CODE_4M.fd, OVMF_VARS_4M.fdを利用)
-make run-nographic
+```bash
+# ブートローダーとカーネルをビルドしてイメージにまとめる
+make build-image
+```
+
+イメージを起動
+
+``bash
+# グラフィックなしで起動する場合はdevcontainerで起動
+./bin/run.sh -n
+
+# グラフィックありで起動する場合はホスト側で起動
+./bin/run.sh
 ```
 
 # 実機で実行

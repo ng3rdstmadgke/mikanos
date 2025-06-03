@@ -1,0 +1,5 @@
+#!/bin/bash
+
+export $(cat ${PROJECT_DIR}/.devcontainer/.env | grep -v -e "^$" -e "^ *#" | sed -e "s| *#.*$||" | xargs)
+alias ll="ls -alF"
+export PATH="$PATH:$PROJECT_DIR/bin"

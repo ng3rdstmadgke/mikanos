@@ -3,14 +3,14 @@
 
 set -ex
 
-PROJECT_DIR=$(cd "$(dirname $0)/.."; pwd)
 
-cd $PROJECT_DIR
+mkdir -p $BUILD_DIR
+cd $BUILD_DIR
 if [ ! -d edk2 ]; then
   git clone https://github.com/tianocore/edk2.git
 fi
 
-cd $PROJECT_DIR/edk2
+cd $BUILD_DIR/edk2
 
 
 # TOOL_CHAIN_TAGにCLANG38が定義できる最新のバージョン
